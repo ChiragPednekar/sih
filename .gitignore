@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+
+# Your data and anything derived from it. Nothing in here is committed --
+# the raw inputs are yours to supply, and the artifacts are reproducible
+# by re-running the training pipeline.
+data_store/
+artifacts/
+
+# Synthetic demo data and the artifacts trained on it. Regenerate any time
+# with tools/run_demo.sh -- never commit them, and never present them as results.
+sample_data/
+sample_artifacts/
+
+# CatBoost writes training telemetry into the working directory.
+catboost_info/
+
+# Local editor/agent settings, not project configuration.
+.claude/

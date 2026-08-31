@@ -1,0 +1,36 @@
+# Python 3.11
+#
+# Install with:
+#   python3.11 -m venv .venv && source .venv/bin/activate
+#   pip install -r requirements.txt
+#
+# Lower bounds only: these are the minimum versions the code was developed
+# against. Pin exact versions here if you need a reproducible submission build.
+
+# --- core data handling ---
+pandas>=2.0
+numpy>=1.26
+pyarrow>=14.0            # Parquet read/write for the local store
+xarray>=2023.1           # NetCDF/GRIB -> flat table conversion helper
+
+# --- models ---
+scikit-learn>=1.3        # isotonic/Platt calibration, splitting, metrics
+xgboost>=2.0             # regime classifier + residual bias correction
+catboost>=1.2            # alternative backend for both of the above
+lightgbm>=4.0            # heavy-rain threshold classifiers
+shap>=0.44               # regime-classifier explainability
+scipy>=1.11              # neighbourhood filtering for the Fraction Skill Score
+joblib>=1.3              # model artifact serialisation
+
+# --- geospatial ---
+geopandas>=0.14          # district polygons and the zonal spatial join
+shapely>=2.0
+
+# --- API ---
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.5
+
+# --- tests ---
+pytest>=7.4
+httpx>=0.26              # required by fastapi.testclient
