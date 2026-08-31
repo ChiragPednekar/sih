@@ -20,3 +20,5 @@ catboost_info/
 
 # Local editor/agent settings, not project configuration.
 .claude/
+.vercel
+.env*

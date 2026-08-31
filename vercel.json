@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
   "outputDirectory": "rainfall_pipeline/api/static",
   "cleanUrls": true,
   "headers": [
