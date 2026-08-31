@@ -236,6 +236,7 @@ const el = (id) => document.getElementById(id);
 const state = {
   dates: null, health: null, districtSource: null,
   lastGrid: null, lastPrediction: null, lastReport: null, lastTimeline: null,
+  staticMode: false, demo: undefined,
   view: "overview",
 };
 
@@ -289,8 +290,98 @@ function showAlert(message, kind = "error") {
 
 function clearAlert() { el("alert").classList.add("hidden"); }
 
+/* ------------------------------------------------------------ static mode
+ *
+ * The dashboard normally reads a live service at the same origin. On a static
+ * host there is none, so the first failed call flips the page into static
+ * mode: every later request is answered from the frozen snapshot in demo/.
+ * The snapshot is one date only, and the page says so rather than letting the
+ * date picker imply a range it cannot serve.
+ */
+
+const DEMO_DIR = "demo";
+
+function slugify(value) {
+  return String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "unnamed";
+}
+
+/* Map a live request onto its snapshot file. Returns null when the endpoint
+ * cannot meaningfully be frozen -- the what-if probe re-runs the model per
+ * request, so a stale answer would be a lie rather than a fallback. */
+function demoFileFor(path) {
+  const manifest = state.demo;
+  if (!manifest) return null;
+  const [route, query = ""] = path.split("?");
+  const params = new URLSearchParams(query);
+  const files = manifest.files || {};
+  const district = params.get("district");
+
+  switch (route) {
+    case "/health": return files.health;
+    case "/dates": return files.dates;
+    case "/districts": return files.districts;
+    case "/verification-report": return files["verification-report"];
+    case "/grid": return files.grid;
+    case "/watch": return files.watch;
+    case "/risk-matrix": return files["risk-matrix"];
+    case "/drivers": return files.drivers;
+    case "/events":
+      return files[`events:${params.get("unseen_only") === "false" ? "false" : "true"}`];
+    case "/predict":
+      return district ? files[`predict:${slugify(district)}`] : null;
+    case "/timeline":
+      return district ? files[`timeline:${slugify(district)}`] : null;
+    default:
+      return null;
+  }
+}
+
+async function loadDemoManifest() {
+  if (state.demo !== undefined) return state.demo;
+  try {
+    const response = await fetch(`${DEMO_DIR}/index.json`, { cache: "no-store" });
+    state.demo = response.ok ? await response.json() : null;
+  } catch (err) {
+    state.demo = null;
+  }
+  return state.demo;
+}
+
 async function getJSON(path) {
-  const response = await fetch(path);
+  if (state.staticMode) {
+    const file = demoFileFor(path);
+    if (!file) {
+      throw new Error(
+        "This panel needs the live service. The hosted demo is a frozen " +
+        "snapshot, so it cannot re-run the model for a new request."
+      );
+    }
+    const snap = await fetch(`${DEMO_DIR}/${file}`, { cache: "no-store" });
+    if (!snap.ok) throw new Error(`Snapshot ${file} is missing from this deployment.`);
+    return snap.json();
+  }
+
+  let response;
+  try {
+    response = await fetch(path);
+  } catch (err) {
+    // No service at this origin at all -- try the frozen snapshot once.
+    const manifest = await loadDemoManifest();
+    if (manifest) {
+      state.staticMode = true;
+      enterStaticMode(manifest);
+      return getJSON(path);
+    }
+    throw new Error(`Could not reach ${path}: ${err.message}`);
+  }
+  if (response.status === 404 && !state.staticMode) {
+    const manifest = await loadDemoManifest();
+    if (manifest) {
+      state.staticMode = true;
+      enterStaticMode(manifest);
+      return getJSON(path);
+    }
+  }
   let body = null;
   try {
     body = await response.json();
@@ -375,6 +466,37 @@ function catmullRom(ctx, points) {
 }
 
 
+/* Lock the page to what the snapshot can actually answer, and say why. */
+function enterStaticMode(manifest) {
+  const date = el("date");
+  if (date) {
+    date.value = manifest.date;
+    date.min = manifest.date;
+    date.max = manifest.date;
+    date.readOnly = true;
+    date.title = "The hosted demo is a snapshot of a single date.";
+  }
+  const hint = el("date-hint");
+  if (hint) hint.textContent = `Snapshot of ${manifest.date} — one date only`;
+
+  // A frozen snapshot of fabricated data is still fabricated. Force the notice
+  // on and make it permanent.
+  const banner = el("synthetic-banner");
+  if (banner && manifest.synthetic) {
+    banner.classList.remove("hidden");
+    const tag = banner.querySelector(".banner-tag");
+    if (tag) tag.textContent = "Static demo";
+    const text = banner.querySelector("span:last-child");
+    if (text) {
+      text.textContent =
+        "Hosted snapshot of a fabricated demo dataset, frozen at " + manifest.date +
+        ". Every value here is made up and says nothing about real rainfall " +
+        "forecasting. Run the service locally to use your own data.";
+    }
+  }
+  document.body.classList.add("static-mode");
+}
+
 /* ------------------------------------------------------------- bootstrap */
 
 async function loadService() {
@@ -410,14 +532,16 @@ async function loadService() {
     const range = await getJSON("/dates");
     state.dates = range;
     if (range.synthetic) el("synthetic-banner").classList.remove("hidden");
-    if (range.available) {
+    // In static mode the picker is already pinned to the snapshot's one date;
+    // the full range would advertise dates this deployment cannot serve.
+    if (range.available && !state.staticMode) {
       const input = el("date");
       input.min = range.start;
       input.max = range.end;
       input.value = range.end;
       el("date-hint").textContent = `${range.start} to ${range.end} · ${range.n_dates} days`;
-      if (range.synthetic) el("brand-version").textContent = "Synthetic dataset";
     }
+    if (range.synthetic) el("brand-version").textContent = "Synthetic dataset";
   } catch (err) {
     el("date-hint").textContent = "No dates available";
   }
@@ -1731,6 +1855,12 @@ function renderScenarioControls() {
 }
 
 async function runScenario() {
+  if (state.staticMode) {
+    el("scenario-disclaimer").textContent =
+      "The scenario probe re-runs the model for every adjustment, so it needs " +
+      "the live service. Run the project locally to use this panel.";
+    return;
+  }
   const query = currentQuery();
   if (!query.district || !query.date) {
     el("scenario-disclaimer").textContent = "Choose a district and date in the parameters panel first.";

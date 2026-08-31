@@ -805,3 +805,7 @@ td.null { color: var(--ink-4); }
   .coords { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .map-stage canvas { height: 230px; }
 }
+
+/* Static deployment: the controls that need a live model are visibly inert. */
+.static-mode .sliders { opacity: .5; pointer-events: none; }
+.static-mode #date { cursor: not-allowed; }
